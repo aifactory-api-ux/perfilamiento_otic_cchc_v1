@@ -1,0 +1,92 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: perfilamiento-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: perfilamiento
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d perfilamiento']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - perfilamiento_net
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: perfilamiento-backend
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      FRONTEND_URL: 'http://localhost:9000'
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: perfilamiento
+      DATABASE_SSL: 'false'
+      DATABASE_SYNCHRONIZE: 'false'
+      KEYCLOAK_ISSUER_URL: 'http://localhost:8080/realms/otic'
+      KEYCLOAK_AUDIENCE: perfilamiento-api
+      KEYCLOAK_JWKS_URI: 'http://localhost:8080/realms/otic/protocol/openid-connect/certs'
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -s http://127.0.0.1:3000/ > /dev/null || exit 1']
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - perfilamiento_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: perfilamiento-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 9000
+      REACT_APP_API_BASE_URL: 'http://localhost:3000'
+      REACT_APP_KEYCLOAK_URL: 'http://localhost:8080'
+      REACT_APP_KEYCLOAK_REALM: otic
+      REACT_APP_KEYCLOAK_CLIENT_ID: perfilamiento-frontend
+    ports:
+      - '9000:9000'
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:9000/ || exit 1']
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - perfilamiento_net
+
+volumes:
+  postgres_data:
+    name: perfilamiento_postgres_data
+
+networks:
+  perfilamiento_net:
+    name: perfilamiento_net
+    driver: bridge
